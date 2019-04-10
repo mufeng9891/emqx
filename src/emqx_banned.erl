@@ -127,4 +127,3 @@ expire_banned_items(Now) ->
               mnesia:delete_object(?TAB, B, sticky_write);
          (_, _Acc) -> ok
       end, ok, ?TAB).
-

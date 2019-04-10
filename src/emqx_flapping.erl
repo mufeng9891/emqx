@@ -15,67 +15,120 @@
 %% @doc TODO:
 %% 1. Flapping Detection
 %% 2. Conflict Detection?
+
+
+%% @doc flapping detect algorithm
+%% * Storing the results of the last 21 checks of the host or service
+%% * Analyzing the historical check results and determine where state
+%%   changes/transitions occur
+%% * Using the state transitions to determine a percent state change value
+%%   (a measure of change) for the host or service
+%% * Comparing the percent state change value against low and high flapping thresholds
 -module(emqx_flapping).
 
-%% Use ets:update_counter???
+-include_lib("emqx/include/logger.hrl").
 
--behaviour(gen_server).
+-behaviour(gen_statem).
 
 -export([start_link/0]).
 
--export([ is_banned/1
-        , banned/1
+%% gen_statem callbacks
+-export([ terminate/3
+        , code_change/4
+        , init/1
+        , callback_mode/0
         ]).
 
-%% gen_server callbacks
--export([ init/1
-        , handle_call/3
-        , handle_cast/2
-        , handle_info/2
-        , terminate/2
-        , code_change/3
-        ]).
+-define(TAB, ?MODULE).
 
--define(SERVER, ?MODULE).
+%% Mnesia bootstrap
+-export([mnesia/1]).
 
--record(state, {}).
+-boot_mnesia({mnesia, [boot]}).
+-copy_mnesia({mnesia, [copy]}).
+
+-record(flapping,
+        { client_id     :: binary()
+        , state         :: term()
+        , check_times   :: pos_integer()
+        , time_interval :: pos_integer()
+        , high_treshold :: float()
+        , low_treshold  :: float()
+        , action        :: fun()
+        }).
+
+%%------------------------------------------------------------------------------
+%% Mnesia bootstrap
+%%------------------------------------------------------------------------------
+
+mnesia(boot) ->
+    ok = ekka_mnesia:create_table(?TAB, [
+                {type, set},
+                {ram_copies, [node()]},
+                {record_name, flapping},
+                {local_content, true},
+                {attributes, record_info(fields, flapping)},
+                {storage_properties, [{ets, [{read_concurrency, true},
+                                             {write_concurrency, true}]}]}]);
+
+mnesia(copy) ->
+    ok = ekka_mnesia:copy_table(?TAB).
+
+check(#{ client_id := ClientId }) ->
+    ets:member(?TAB, _)
+
+%%--------------------------------------------------------------------
+%% gen_statem callbacks
+%%--------------------------------------------------------------------
 
 -spec(start_link() -> {ok, pid()} | ignore | {error, any()}).
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
-is_banned(ClientId) ->
-    ets:member(banned, ClientId).
-
-banned(ClientId) ->
-    ets:insert(banned, {ClientId, os:timestamp()}).
-
-%%--------------------------------------------------------------------
-%% gen_server callbacks
-%%--------------------------------------------------------------------
-
 init([]) ->
-    %% ets:new(banned, [public, ordered_set, named_table]),
-    {ok, #state{}}.
+    erlang:process_flag(trap_exit, true),
+    load_hooks(),
+    {ok, service_running, #{}}.
 
-handle_call(_Request, _From, State) ->
-    Reply = ok,
-    {reply, Reply, State}.
+callback_mode() -> [state_functions].
 
-handle_cast(_Msg, State) ->
-    {noreply, State}.
+code_change(_Vsn, State, Data, _Extra) ->
+    {ok, State, Data}.
 
-handle_info(_Info, State) ->
-    {noreply, State}.
-
-terminate(_Reason, _State) ->
+terminate(_Reason, _StateName, _State) ->
+    unload_hooks(),
     ok.
 
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+%%--------------------------------------------------------------------
+%% state functions
+%%--------------------------------------------------------------------
+
+service_started({call, From}, check, _State) ->
+    {keep_state_and_data, [{reply, From, ok}]};
+
+service_started(cast, , _State) ->
+    {keep_state_and_data}
 
 %%--------------------------------------------------------------------
 %% Internal functions
 %%--------------------------------------------------------------------
 
+load_hooks() ->
+    emqx:hook('client.connected', fun on_client_connected/3),
+    emqx:hook('client.disconnected', fun on_client_disconnected/2).
 
+unload_hooks() ->
+    emqx:unhook('client.connected', fun on_client_connected/3),
+    emqx:unhook('client.disconnected', fun on_client_disconnected/2).
+
+on_client_connected(#{client_id := ClientId}, 0, _ConnInfo) ->
+    ok;
+on_client_connected(#{}, _ConnAck, _ConnInfo) ->
+    ok.
+
+on_client_disconnected(#{client_id := ClientId}, _Reason) ->
+
+    ok;
+on_client_disconnected(_Client, Reason) ->
+    ?LOG(error, "[Flapping] Client disconnected, cannot encode reason: ~p", [Reason]),
+    ok.

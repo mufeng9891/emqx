@@ -113,13 +113,13 @@
 %% Alarm
 %%--------------------------------------------------------------------
 
--record(alarm, {
-          id        :: binary(),
-          severity  :: notice | warning | error | critical,
-          title     :: iolist(),
-          summary   :: iolist(),
-          timestamp :: erlang:timestamp()
-        }).
+%% -record(alarm, {
+%%           id        :: binary(),
+%%           severity  :: notice | warning | error | critical,
+%%           title     :: iolist(),
+%%           summary   :: iolist(),
+%%           timestamp :: erlang:timestamp()
+%%         }).
 
 %%--------------------------------------------------------------------
 %% Plugin
