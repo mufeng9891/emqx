@@ -814,6 +814,11 @@ end}.
   {datatype, {enum, [true, false]}}
 ]}.
 
+{mapping, "zone.$name.flapping_threshold", "emqx.zones", [
+  {default, "30%"},
+  {datatype, {percent, float}}
+]}.
+
 %% @doc Force connection/session process GC after this number of
 %% messages | bytes passed through.
 %% Numbers delimited by `|'. Zero or negative is to disable.
@@ -2053,11 +2058,8 @@ end}.
 ]}.
 
 {translation, "emqx.sysmon", fun(Conf) ->
-  [{long_gc, cuttlefish:conf_get("sysmon.long_gc", Conf)},
-   {long_schedule, cuttlefish:conf_get("sysmon.long_schedule", Conf)},
-   {large_heap, cuttlefish:conf_get("sysmon.large_heap", Conf)},
-   {busy_port, cuttlefish:conf_get("sysmon.busy_port", Conf)},
-   {busy_dist_port, cuttlefish:conf_get("sysmon.busy_dist_port", Conf)}]
+    Configs = cuttlefish_variable:filter_by_prefix("sysmon", Conf),
+    [{list_to_atom(Name), Value} || {[_, Name], Value} <- Configs]
 end}.
 
 %%--------------------------------------------------------------------
@@ -2095,12 +2097,8 @@ end}.
 ]}.
 
 {translation, "emqx.os_mon", fun(Conf) ->
-  [{cpu_check_interval, cuttlefish:conf_get("os_mon.cpu_check_interval", Conf)},
-   {cpu_high_watermark, cuttlefish:conf_get("os_mon.cpu_high_watermark", Conf)},
-   {cpu_low_watermark, cuttlefish:conf_get("os_mon.cpu_low_watermark", Conf)},
-   {mem_check_interval, cuttlefish:conf_get("os_mon.mem_check_interval", Conf)},
-   {sysmem_high_watermark, cuttlefish:conf_get("os_mon.sysmem_high_watermark", Conf)},
-   {procmem_high_watermark, cuttlefish:conf_get("os_mon.procmem_high_watermark", Conf)}]
+    Configs = cuttlefish_variable:filter_by_prefix("os_mon", Conf),
+    [{list_to_atom(Name), Value} || {[_, Name], Value} <- Configs]
 end}.
 
 %%--------------------------------------------------------------------
@@ -2122,7 +2120,6 @@ end}.
 ]}.
 
 {translation, "emqx.vm_mon", fun(Conf) ->
-  [{check_interval, cuttlefish:conf_get("vm_mon.check_interval", Conf)},
-   {process_high_watermark, cuttlefish:conf_get("vm_mon.process_high_watermark", Conf)},
-   {process_low_watermark, cuttlefish:conf_get("vm_mon.process_low_watermark", Conf)}]
+    Configs = cuttlefish_variable:filter_by_prefix("vm_mon", Conf),
+    [{list_to_atom(Name), Value} || {[_, Name], Value} <- Configs]
 end}.

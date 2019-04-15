@@ -32,6 +32,8 @@
 
 -export([start_link/0]).
 
+%% This module is used to garbage clean the flapping records
+
 %% gen_statem callbacks
 -export([ terminate/3
         , code_change/4
@@ -48,13 +50,9 @@
 -copy_mnesia({mnesia, [copy]}).
 
 -record(flapping,
-        { client_id     :: binary()
-        , state         :: term()
-        , check_times   :: pos_integer()
-        , time_interval :: pos_integer()
-        , high_treshold :: float()
-        , low_treshold  :: float()
-        , action        :: fun()
+        { client_id       :: binary()
+        , check_times     :: pos_integer()
+        , timestamp       :: timestamp()
         }).
 
 %%------------------------------------------------------------------------------
@@ -103,32 +101,7 @@ terminate(_Reason, _StateName, _State) ->
 %% state functions
 %%--------------------------------------------------------------------
 
-service_started({call, From}, check, _State) ->
-    {keep_state_and_data, [{reply, From, ok}]};
-
-service_started(cast, , _State) ->
-    {keep_state_and_data}
 
 %%--------------------------------------------------------------------
 %% Internal functions
 %%--------------------------------------------------------------------
-
-load_hooks() ->
-    emqx:hook('client.connected', fun on_client_connected/3),
-    emqx:hook('client.disconnected', fun on_client_disconnected/2).
-
-unload_hooks() ->
-    emqx:unhook('client.connected', fun on_client_connected/3),
-    emqx:unhook('client.disconnected', fun on_client_disconnected/2).
-
-on_client_connected(#{client_id := ClientId}, 0, _ConnInfo) ->
-    ok;
-on_client_connected(#{}, _ConnAck, _ConnInfo) ->
-    ok.
-
-on_client_disconnected(#{client_id := ClientId}, _Reason) ->
-
-    ok;
-on_client_disconnected(_Client, Reason) ->
-    ?LOG(error, "[Flapping] Client disconnected, cannot encode reason: ~p", [Reason]),
-    ok.
