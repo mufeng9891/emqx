@@ -766,6 +766,7 @@ make_will_msg(#mqtt_packet_connect{proto_ver   = ProtoVer,
 check_connect(Packet, PState) ->
     run_check_steps([fun check_proto_ver/2,
                      fun check_client_id/2,
+                     fun check_flapping/2,
                      fun check_banned/2,
                      fun check_will_topic/2], Packet, PState).
 
@@ -797,6 +798,10 @@ check_client_id(#mqtt_packet_connect{client_id = ClientId}, #pstate{zone = Zone}
         true  -> ok;
         false -> {error, ?RC_CLIENT_IDENTIFIER_NOT_VALID}
     end.
+
+check_flapping(#mqtt_packet_connect{client_id = ClientId}, #pstate{zone = Zone}) ->
+
+
 
 check_banned(_ConnPkt, #pstate{enable_ban = false}) ->
     ok;

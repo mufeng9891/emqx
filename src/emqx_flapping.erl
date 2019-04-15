@@ -41,7 +41,7 @@
         , callback_mode/0
         ]).
 
--define(TAB, ?MODULE).
+-define(FLAPPING_TAB, ?MODULE).
 
 %% Mnesia bootstrap
 -export([mnesia/1]).
@@ -50,9 +50,9 @@
 -copy_mnesia({mnesia, [copy]}).
 
 -record(flapping,
-        { client_id       :: binary()
-        , check_times     :: pos_integer()
-        , timestamp       :: timestamp()
+        { client_id =       :: binary()
+        , check_times = 0     :: pos_integer()
+        , timestamp =       :: timestamp()
         }).
 
 %%------------------------------------------------------------------------------
@@ -60,7 +60,7 @@
 %%------------------------------------------------------------------------------
 
 mnesia(boot) ->
-    ok = ekka_mnesia:create_table(?TAB, [
+    ok = ekka_mnesia:create_table(?FLAPPING_TAB, [
                 {type, set},
                 {ram_copies, [node()]},
                 {record_name, flapping},
@@ -70,10 +70,11 @@ mnesia(boot) ->
                                              {write_concurrency, true}]}]}]);
 
 mnesia(copy) ->
-    ok = ekka_mnesia:copy_table(?TAB).
+    ok = ekka_mnesia:copy_table(?FLAPPING_TAB).
 
-check(#{ client_id := ClientId }) ->
-    ets:member(?TAB, _)
+update(ClientId) ->
+    ets:insert(_, _)
+
 
 %%--------------------------------------------------------------------
 %% gen_statem callbacks
