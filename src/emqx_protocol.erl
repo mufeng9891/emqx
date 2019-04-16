@@ -799,9 +799,11 @@ check_client_id(#mqtt_packet_connect{client_id = ClientId}, #pstate{zone = Zone}
         false -> {error, ?RC_CLIENT_IDENTIFIER_NOT_VALID}
     end.
 
-check_flapping(#mqtt_packet_connect{client_id = ClientId}, #pstate{zone = Zone}) ->
-
-
+check_flapping(#mqtt_packet_connect{client_id = ClientId}, #pstate{zone = _Zone}) ->
+    case emqx_flapping:check(ClientId) of
+        flapping -> ok;
+        _ -> ok
+    end.
 
 check_banned(_ConnPkt, #pstate{enable_ban = false}) ->
     ok;

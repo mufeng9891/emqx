@@ -270,8 +270,7 @@ end}.
     X when is_integer(X) -> cuttlefish_util:ceiling(X / 1024); %% Bytes to Kilobytes;
     _ -> undefined
   end
- end
-}.
+ end}.
 
 {validator, "zdbbl_range", "must be between 1KB and 2097151KB",
  fun(ZDBBL) ->
@@ -814,9 +813,17 @@ end}.
   {datatype, {enum, [true, false]}}
 ]}.
 
+{mapping, "zone.$name.flapping", "emqx.zones", [
+  {datatype, flag}
+]}.
+
 {mapping, "zone.$name.flapping_threshold", "emqx.zones", [
-  {default, "30%"},
-  {datatype, {percent, float}}
+  {default, 20},
+  {datatype, integer}
+]}.
+
+{mapping, "zone.$name.flapping_clean_period", "emqx.zones", [
+  {datatype, {duration, ms}}
 ]}.
 
 %% @doc Force connection/session process GC after this number of

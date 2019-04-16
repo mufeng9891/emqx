@@ -26,11 +26,13 @@
 %% * Comparing the percent state change value against low and high flapping thresholds
 -module(emqx_flapping).
 
--include_lib("emqx/include/logger.hrl").
+-include("emqx.hrl").
+-include("logger.hrl").
+-include("types.hrl").
 
 -behaviour(gen_statem).
 
--export([start_link/0]).
+-export([start_link/1]).
 
 %% This module is used to garbage clean the flapping records
 
@@ -38,71 +40,73 @@
 -export([ terminate/3
         , code_change/4
         , init/1
+        , initialized/3
         , callback_mode/0
         ]).
 
 -define(FLAPPING_TAB, ?MODULE).
 
 %% Mnesia bootstrap
--export([mnesia/1]).
+-export([check/1]).
 
--boot_mnesia({mnesia, [boot]}).
--copy_mnesia({mnesia, [copy]}).
 
 -record(flapping,
-        { client_id =       :: binary()
-        , check_times = 0     :: pos_integer()
-        , timestamp =       :: timestamp()
+        { client_id       :: binary()
+        , check_times = 0 :: pos_integer()
+        , timestamp       :: erlang:timestamp()
         }).
 
-%%------------------------------------------------------------------------------
-%% Mnesia bootstrap
-%%------------------------------------------------------------------------------
+check(ClientId) ->
+    CheckTimes = #flapping.check_times,
+    case ets:update_counter(?FLAPPING_TAB, ClientId, {CheckTimes, 1}) of
+        CheckTimes -> ok;
+        _ -> ok
+    end.
 
-mnesia(boot) ->
-    ok = ekka_mnesia:create_table(?FLAPPING_TAB, [
-                {type, set},
-                {ram_copies, [node()]},
-                {record_name, flapping},
-                {local_content, true},
-                {attributes, record_info(fields, flapping)},
-                {storage_properties, [{ets, [{read_concurrency, true},
-                                             {write_concurrency, true}]}]}]);
+update(ClientId, CheckTimes) ->
+    ok.
 
-mnesia(copy) ->
-    ok = ekka_mnesia:copy_table(?FLAPPING_TAB).
-
-update(ClientId) ->
-    ets:insert(_, _)
-
+%%--------------------------------------------------------------------
+%%
+%%--------------------------------------------------------------------
 
 %%--------------------------------------------------------------------
 %% gen_statem callbacks
 %%--------------------------------------------------------------------
+-spec(start_link(Config :: list() | map()) -> startlink_ret()).
+start_link(Config) when is_list(Config) ->
+    start_link(maps:from_list(Config));
+start_link(Config) ->
+    gen_statem:start_link({local, ?MODULE}, ?MODULE, Config, []).
 
--spec(start_link() -> {ok, pid()} | ignore | {error, any()}).
-start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+init(Config) ->
+    TabOpts = [public, set, {write_concurrency, true}, {read_concurrency, true}],
+    ok = emqx_tables:new(?FLAPPING_TAB, TabOpts),
+    {ok, initialized, #{time => maps:get(timer, Config, 3600000)}}.
 
-init([]) ->
-    erlang:process_flag(trap_exit, true),
-    load_hooks(),
-    {ok, service_running, #{}}.
+callback_mode() -> [state_functions, state_enter].
 
-callback_mode() -> [state_functions].
+initialized(enter, _OldState, #{time := Time}) ->
+    Action = {state_timeout, Time, gc_flapping},
+    {keep_state_and_data, Action};
+initialized(state_timeout, gc_flapping, _StateData) ->
+    gc_flapping(),
+    repeat_state_and_data.
 
 code_change(_Vsn, State, Data, _Extra) ->
     {ok, State, Data}.
 
 terminate(_Reason, _StateName, _State) ->
-    unload_hooks(),
     ok.
 
 %%--------------------------------------------------------------------
 %% state functions
 %%--------------------------------------------------------------------
 
-
 %%--------------------------------------------------------------------
 %% Internal functions
 %%--------------------------------------------------------------------
+
+%% do flapping gc in database
+gc_flapping() ->
+    ok.
