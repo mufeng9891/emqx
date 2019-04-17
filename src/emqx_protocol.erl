@@ -60,6 +60,7 @@
           is_bridge,
           enable_ban,
           enable_acl,
+          enable_flapping,
           acl_deny_action,
           recv_stats,
           send_stats,
@@ -106,6 +107,7 @@ init(SocketOpts = #{ peername := Peername
             is_bridge           = false,
             enable_ban          = emqx_zone:get_env(Zone, enable_ban, false),
             enable_acl          = emqx_zone:get_env(Zone, enable_acl),
+            enable_flapping     = emqx_zone:get_env(Zone, enable_flapping_detect, false),
             acl_deny_action     = emqx_zone:get_env(Zone, acl_deny_action, ignore),
             recv_stats          = #{msg => 0, pkt => 0},
             send_stats          = #{msg => 0, pkt => 0},
@@ -799,10 +801,18 @@ check_client_id(#mqtt_packet_connect{client_id = ClientId}, #pstate{zone = Zone}
         false -> {error, ?RC_CLIENT_IDENTIFIER_NOT_VALID}
     end.
 
-check_flapping(#mqtt_packet_connect{client_id = ClientId}, #pstate{zone = _Zone}) ->
-    case emqx_flapping:check(ClientId) of
-        flapping -> ok;
-        _ -> ok
+check_flapping(_ConnPkt, #pstate{ enable_flapping = false }) ->
+    ok;
+check_flapping(#mqtt_packet_connect{client_id = ClientId}, #pstate{zone = Zone}) ->
+    Expiry = emqx_zone:get_env(Zone, flapping_expiry_interval, 60),
+    Threshold = emqx_zone:get_env(Zone, flapping_threshold, 20),
+    Until = erlang:system_time(second) + Expiry * 60,
+    case emqx_flapping:check(ClientId, Expiry, Threshold) of
+        flapping ->
+            emqx_banned:add(ClientId, _Reason = <<"flapping">>, _By = <<"flapping_checker">>, Until),
+            ok;
+        _Other ->
+            ok
     end.
 
 check_banned(_ConnPkt, #pstate{enable_ban = false}) ->

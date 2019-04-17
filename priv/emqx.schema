@@ -813,7 +813,7 @@ end}.
   {datatype, {enum, [true, false]}}
 ]}.
 
-{mapping, "zone.$name.flapping", "emqx.zones", [
+{mapping, "zone.$name.enable_flapping_detect", "emqx.zones", [
   {datatype, flag}
 ]}.
 
@@ -822,8 +822,8 @@ end}.
   {datatype, integer}
 ]}.
 
-{mapping, "zone.$name.flapping_clean_period", "emqx.zones", [
-  {datatype, {duration, ms}}
+{mapping, "zone.$name.flapping_expiry_interval", "emqx.zones", [
+  {datatype, {duration, m}}
 ]}.
 
 %% @doc Force connection/session process GC after this number of

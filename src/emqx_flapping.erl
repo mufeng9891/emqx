@@ -46,29 +46,80 @@
 
 -define(FLAPPING_TAB, ?MODULE).
 
-%% Mnesia bootstrap
--export([check/1]).
-
+-export([check/3]).
 
 -record(flapping,
-        { client_id       :: binary()
-        , check_times = 0 :: pos_integer()
-        , timestamp       :: erlang:timestamp()
+        { client_id   :: binary()
+        , check_times :: integer()
+        , timestamp   :: integer()
+        , expire_time :: integer()
         }).
 
-check(ClientId) ->
-    CheckTimes = #flapping.check_times,
-    case ets:update_counter(?FLAPPING_TAB, ClientId, {CheckTimes, 1}) of
-        CheckTimes -> ok;
-        _ -> ok
+-type(flapping_record() :: #flapping{}).
+-type(flapping_state() :: flapping | normal).
+
+
+%% @doc This function is used to initialize flapping records
+%% the expiry time unit is minutes.
+-spec(init_flapping(ClientId :: binary(), Expiry :: integer())
+      -> flapping_record()).
+init_flapping(ClientId, Expiry) ->
+    #flapping{ client_id = ClientId
+             , check_times = 0
+             , timestamp = emqx_time:now_secs()
+             , expire_time = emqx_time:now_secs() + Expiry * 60
+             }.
+
+%% @doc This function is used to initialize flapping records
+%% the expiry time unit is minutes.
+-spec(check(ClientId :: binary(), Expiry :: integer(), Threshold :: integer())
+      -> flapping_state()).
+check(ClientId, Expiry, Threshold) ->
+    check(ClientId, Expiry, Threshold, init_flapping(ClientId, Expiry)).
+
+-spec(check( ClientId :: binary()
+           , Expiry :: integer()
+           , Threshold :: integer()
+           , InitFlapping :: flapping_record()) -> flapping_state()).
+check(ClientId, Expiry, Threshold, InitFlapping) ->
+    Pos = #flapping.check_times,
+    try ets:update_counter(?FLAPPING_TAB, ClientId, {Pos, 1}) of
+        CheckTimes ->
+            case ets:lookup(?FLAPPING_TAB, ClientId) of
+                [Flapping] ->
+                    check_flapping(CheckTimes, Expiry,  Threshold,  Flapping);
+                _Flapping ->
+                    normal
+            end
+    catch
+        error:badarg ->
+            ets:insert_new(?FLAPPING_TAB, InitFlapping)
     end.
 
-update(ClientId, CheckTimes) ->
-    ok.
+-spec(check_flapping( CheckTimes :: integer()
+                    , Expiry :: integer()
+                    , Threshold :: integer()
+                    , InitFlapping :: flapping_record())
+      -> flapping_state()).
+check_flapping(CheckTimes, Expiry, Threshold,
+               Flapping = #flapping{ client_id = ClientId
+                                   , timestamp = TimeStamp }) ->
+    TimeDiff = emqx_time:now_secs() - TimeStamp,
+    case time2min(TimeDiff) of
+        1 when CheckTimes > Threshold ->
+            flapping;
+        Minutes when Minutes =< Expiry ->
+            ets:insert(?FLAPPING_TAB, Flapping#flapping{ timestamp = os:timestamp() }),
+            normal;
+        _Minutes ->
+            ets:delete(?FLAPPING_TAB, ClientId)
+    end.
 
-%%--------------------------------------------------------------------
-%%
-%%--------------------------------------------------------------------
+time2min(TimeInterval) ->
+    case TimeInterval div 60 of
+        0 -> 1;
+        Min -> Min
+    end.
 
 %%--------------------------------------------------------------------
 %% gen_statem callbacks
@@ -80,17 +131,21 @@ start_link(Config) ->
     gen_statem:start_link({local, ?MODULE}, ?MODULE, Config, []).
 
 init(Config) ->
-    TabOpts = [public, set, {write_concurrency, true}, {read_concurrency, true}],
+    TabOpts = [ public
+              , set
+              , {keypos, 2}
+              , {write_concurrency, true}
+              , {read_concurrency, true}],
     ok = emqx_tables:new(?FLAPPING_TAB, TabOpts),
     {ok, initialized, #{time => maps:get(timer, Config, 3600000)}}.
 
 callback_mode() -> [state_functions, state_enter].
 
 initialized(enter, _OldState, #{time := Time}) ->
-    Action = {state_timeout, Time, gc_flapping},
+    Action = {state_timeout, Time, clean_expired_records},
     {keep_state_and_data, Action};
-initialized(state_timeout, gc_flapping, _StateData) ->
-    gc_flapping(),
+initialized(state_timeout, clean_expired_records, #{}) ->
+    clean_expired_records(),
     repeat_state_and_data.
 
 code_change(_Vsn, State, Data, _Extra) ->
@@ -107,6 +162,7 @@ terminate(_Reason, _StateName, _State) ->
 %% Internal functions
 %%--------------------------------------------------------------------
 
-%% do flapping gc in database
-gc_flapping() ->
+%% @doc clean expired records in ets
+clean_expired_records() ->
+
     ok.
