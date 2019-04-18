@@ -109,7 +109,10 @@ check_flapping(CheckTimes, Expiry, Threshold,
         1 when CheckTimes > Threshold ->
             flapping;
         Minutes when Minutes =< Expiry ->
-            ets:insert(?FLAPPING_TAB, Flapping#flapping{ timestamp = os:timestamp() }),
+            Now = emqx_time:now_secs(),
+            NewFlapping = Flapping#flapping{ timestamp = Now,
+                                             expire_time = Now + Expiry * 60},
+            ets:insert(?FLAPPING_TAB, NewFlapping),
             normal;
         _Minutes ->
             ets:delete(?FLAPPING_TAB, ClientId)
@@ -137,7 +140,8 @@ init(Config) ->
               , {write_concurrency, true}
               , {read_concurrency, true}],
     ok = emqx_tables:new(?FLAPPING_TAB, TabOpts),
-    {ok, initialized, #{time => maps:get(timer, Config, 3600000)}}.
+    Timer = maps:get(timer, Config),
+    {ok, initialized, #{timer => timer:minutes(Timer)}}.
 
 callback_mode() -> [state_functions, state_enter].
 
@@ -155,14 +159,27 @@ terminate(_Reason, _StateName, _State) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% state functions
-%%--------------------------------------------------------------------
-
-%%--------------------------------------------------------------------
 %% Internal functions
 %%--------------------------------------------------------------------
 
 %% @doc clean expired records in ets
 clean_expired_records() ->
+    ets:safe_fixtable(?FLAPPING_TAB, true),
+    First = ets:first(?FLAPPING_TAB),
+    Fun = fun(Key, #flapping{ expire_time = Time}) ->
+             case emqx_time:now_secs() > Time of
+                 true ->
+                     ets:delete(?FLAPPING_TAB, Key);
+                 false ->
+                     true
+          end,
+    try
+        do_ets_each(?FLAPPING_TAB, Fun, First)
+    after
+        ets:safe_fixtable(?FLAPPING_TAB, false),
+    end.
 
-    ok.
+do_ets_each(_Table, _Fun, '$end_of_table') ->
+    ok;
+do_ets_each(Table, Fun, Key) ->
+    Fun(Key, ets:lookup(Table, Key)).
