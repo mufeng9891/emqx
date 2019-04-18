@@ -172,11 +172,12 @@ clean_expired_records() ->
                      ets:delete(?FLAPPING_TAB, Key);
                  false ->
                      true
+             end
           end,
     try
         do_ets_each(?FLAPPING_TAB, Fun, First)
     after
-        ets:safe_fixtable(?FLAPPING_TAB, false),
+        ets:safe_fixtable(?FLAPPING_TAB, false)
     end.
 
 do_ets_each(_Table, _Fun, '$end_of_table') ->
